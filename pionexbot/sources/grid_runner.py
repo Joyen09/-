@@ -268,7 +268,16 @@ class GridRunner:
             author = str((m.get("author") or {}).get("id", ""))
             if self.notifier.discord_user_id and author != str(self.notifier.discord_user_id):
                 continue
-            self.notifier.send(self.status_text(), important=True)
+            # 關鍵字 → 績效儀表（真實現金流損益）；其餘任何訊息 → 網格即時狀態
+            txt = str(m.get("content", "")).strip().lower()
+            if any(w in txt for w in ("報表", "損益", "績效", "賺", "結算",
+                                      "pnl", "report")):
+                from ..report import grid_report_text
+                self.notifier.send(
+                    grid_report_text(self.cfg, self.store, self.client,
+                                     time.time()), important=True)
+            else:
+                self.notifier.send(self.status_text(), important=True)
             break  # 一輪只回一次，避免洗版
 
     def _maybe_daily_summary(self) -> None:

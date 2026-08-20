@@ -209,6 +209,81 @@ def test_grid_stress_wiring_offline():
             m.__dict__["BinanceClient"] = orig
 
 
+# ---------------- 帳戶對照 + Discord/CLI 共用包裝 ----------------
+class _FakeClient:
+    """假交易所：回固定餘額與現價。"""
+
+    def __init__(self, balances=None, price=7.0, fail=False):
+        self._bal = balances or {"USDT": 30.0, "BTC": 1.0}
+        self._price = price
+        self._fail = fail
+
+    def get_balances(self):
+        if self._fail:
+            raise RuntimeError("API 掛了")
+        return dict(self._bal)
+
+    def get_ticker_price(self, symbol):
+        return self._price
+
+
+def _cfg(live=True, initial=0.0):
+    from pionexbot.config import Config
+    return Config(mode="live" if live else "paper", raw={
+        "trading": {"symbol": "BTC_USDT", "initial_capital": initial},
+        "grid": {"grids": 10, "quote_per_grid": 5},
+    })
+
+
+def test_account_lines_compares_capital():
+    from pionexbot.report import account_lines
+    # 帳戶：30 USDT + 1 BTC×7 = 37；本金 40 → 賠 3
+    out = "\n".join(account_lines(_cfg(initial=40.0), _FakeClient(), 7.0))
+    assert "總值 37.00" in out, out
+    assert "賠 -3.00" in out and "-7.50%" in out, out
+
+
+def test_account_lines_prompts_when_no_capital_set():
+    from pionexbot.report import account_lines
+    out = "\n".join(account_lines(_cfg(initial=0.0), _FakeClient(), 7.0))
+    assert "initial_capital" in out, "未填本金時要提示怎麼填"
+
+
+def test_account_lines_skipped_for_paper_and_survives_api_failure():
+    from pionexbot.report import account_lines
+    assert account_lines(_cfg(live=False), _FakeClient(), 7.0) == [], \
+        "紙上模式沒有交易所帳戶可查"
+    out = "\n".join(account_lines(_cfg(initial=40.0), _FakeClient(fail=True), 7.0))
+    assert "查詢失敗" in out, "查餘額失敗要降級成一行提示，不能讓整份報表消失"
+
+
+def test_grid_report_text_combines_report_and_account():
+    import tempfile
+
+    from pionexbot.report import grid_report_text
+    from pionexbot.store import Store
+    with tempfile.TemporaryDirectory() as d:
+        s = Store(os.path.join(d, "t.db"))
+        for r in _scenario():
+            s.record_trade(symbol="BTC_USDT", side=r["side"], base=r["base"],
+                           quote=r["quote"], price=r["price"], simulated=False,
+                           source=r["source"], realized_pnl=r["realized_pnl"])
+        txt = grid_report_text(_cfg(initial=40.0), s, _FakeClient(), 9000.0)
+    assert "實盤網格績效儀表" in txt and "真實總損益" in txt
+    assert "交易所帳戶（最終真相）" in txt, "應接上帳戶對照"
+
+
+def test_grid_report_text_without_trades():
+    import tempfile
+
+    from pionexbot.report import grid_report_text
+    from pionexbot.store import Store
+    with tempfile.TemporaryDirectory() as d:
+        txt = grid_report_text(_cfg(), Store(os.path.join(d, "t.db")),
+                               _FakeClient(), 9000.0)
+    assert "沒有網格交易紀錄" in txt
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items())
            if k.startswith("test_") and callable(v)]

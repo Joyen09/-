@@ -159,3 +159,55 @@ def format_grid_report(d: dict, price_note: str = "") -> str:
     if d.get("simulated_rows"):
         lines.append(f"⚠ 內含 {d['simulated_rows']} 筆紙上模擬紀錄（混在同一個 db）")
     return "\n".join(lines)
+
+
+def account_lines(cfg, client, price: float) -> list[str]:
+    """交易所帳戶實況：總值 vs 你存進去的本金。
+
+    這是最終真相——不靠任何記帳推算，直接問交易所現在有多少錢。
+    只有實盤有意義；紙上模式與查詢失敗都回空清單（呼叫端不必判斷）。"""
+    if cfg.is_live is False or client is None:
+        return []
+    quote_coin = cfg.symbol.split("_")[-1]
+    base_coin = cfg.symbol.split("_")[0]
+    try:
+        bal = client.get_balances()
+    except Exception as exc:  # noqa: BLE001 - 查餘額失敗不該讓整份報表消失
+        return ["", f"（交易所餘額查詢失敗：{exc}）"]
+    free_q = float(bal.get(quote_coin, 0))
+    free_b = float(bal.get(base_coin, 0))
+    total = free_q + free_b * price
+    out = ["", "── 交易所帳戶（最終真相）──",
+           f"{quote_coin} {free_q:.2f} + {base_coin} {free_b:.8f}"
+           f"（≈{free_b * price:.2f}）= 總值 {total:.2f}"]
+    try:
+        init = float(cfg.trading.get("initial_capital") or 0)
+    except (TypeError, ValueError):
+        init = 0.0
+    if init > 0:
+        diff = total - init
+        out.append(f"投入本金 {init:.2f} → 實際{'賺' if diff >= 0 else '賠'}"
+                   f" {diff:+.2f} {quote_coin}（{diff / init * 100:+.2f}%）")
+    else:
+        out.append("（在 config.yaml 的 trading.initial_capital 填入你存進"
+                   "派網的本金，這裡就會直接算出實際賺賠）")
+    return out
+
+
+def grid_report_text(cfg, store, client, now_ts: float) -> str:
+    """完整網格績效報表（CLI `grid-report` 與 Discord 查詢共用）。"""
+    rows = [dict(r) for r in store.trades_by_source("grid")]
+    if not rows:
+        return "trades 資料表裡沒有網格交易紀錄（確認在 ~/bot 目錄下跑）。"
+    g = cfg.raw.get("grid", {})
+    capital = float(g.get("grids", 10)) * float(g.get("quote_per_grid", 5))
+    price_note = ""
+    try:
+        price = client.get_ticker_price(cfg.symbol)
+    except Exception:  # noqa: BLE001 - 離線時退回最後成交價
+        price = float(rows[-1]["price"])
+        price_note = "（離線：以最後成交價代替現價）"
+    d = build_grid_report(rows, grid_capital=capital,
+                          current_price=price, now_ts=now_ts)
+    return "\n".join([format_grid_report(d, price_note)]
+                     + account_lines(cfg, client, price))

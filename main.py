@@ -489,26 +489,11 @@ def cmd_grid_report(bot: Bot, args) -> int:
     所以本報表用現金流重建（見 pionexbot/report.py 模組說明）。"""
     import time as _time
 
-    from pionexbot.report import build_grid_report, format_grid_report
+    from pionexbot.report import grid_report_text
 
-    rows = [dict(r) for r in bot.store.trades_by_source("grid")]
-    if not rows:
-        print("trades 資料表裡沒有網格交易紀錄（確認在 ~/bot 目錄下跑）。")
-        return 1
-
-    g = bot.cfg.raw.get("grid", {})
-    capital = float(g.get("grids", 10)) * float(g.get("quote_per_grid", 5))
-    price_note = ""
-    try:
-        price = bot.client.get_ticker_price(bot.cfg.symbol)
-    except Exception:  # noqa: BLE001 - 離線時退回最後成交價
-        price = float(rows[-1]["price"])
-        price_note = "（離線：以最後成交價代替現價）"
-
-    d = build_grid_report(rows, grid_capital=capital,
-                          current_price=price, now_ts=_time.time())
-    print(format_grid_report(d, price_note))
-    return 0
+    txt = grid_report_text(bot.cfg, bot.store, bot.client, _time.time())
+    print(txt)
+    return 1 if txt.startswith("trades 資料表裡沒有") else 0
 
 
 # 網格壓測（路 2）用與 binance-backtest 相同的三段市況
