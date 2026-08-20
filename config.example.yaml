@@ -12,6 +12,8 @@ exchange:
 
 trading:
   symbol: BTC_USDT      # 交易對，格式為 BASE_QUOTE
+  initial_capital: 0    # 你存進交易所的本金（USDT）。填了之後 grid-report 會多算
+                        # 一行「帳戶總值 − 本金 = 實際賺賠」；0 = 不顯示
   order_type: MARKET    # MARKET 或 LIMIT
   quote_per_trade: 20   # 每次「買入」要花多少報價幣（USDT）
   # LIMIT 單才會用到：掛單價相對市價的偏移百分比（買單往下、賣單往上）

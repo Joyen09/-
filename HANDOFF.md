@@ -171,7 +171,7 @@ python tests/test_signing.py && python tests/test_strategies.py \
 docker compose logs -f grid
 docker compose run --rm grid status          # 交易記錄
 docker compose run --rm grid grid-report     # 績效儀表（真實現金流損益）
-# Discord #pionex 打任意字 → 回網格狀態
+# Discord #pionex 打任意字 → 網格狀態；打「報表/損益/績效/賺/結算/pnl」→ 績效儀表（含帳戶對照）
 
 # 紙上（~/bot-paper，分支）
 docker compose -f docker-compose.paper.yml run --rm webhook ict-backtest --limit 20000 [--symbol ETH_USDT]
@@ -199,6 +199,12 @@ tail -f stress.log
    把 `require_ote`/`sweep_sources` 改回關閉
 3. 使用者還想做的其他機器人：台股、每日便宜機票搜尋、OCR 圖片辨識（都想用同一隻 Discord bot 架構）
 4. 網格照顧：跌破 60369 會自動平倉重開（設計行為）；BTC 現處 2026 熊市，使用者知道 4 年週期論
+
+## 7c. 帳戶對照
+
+`grid-report` 末尾會查交易所餘額算「帳戶總值」；在 config.yaml 的
+`trading.initial_capital` 填入存進派網的本金，就會直接算出實際賺賠——
+這是不靠任何記帳推算的最終真相。
 
 ## 8. 溝通風格提醒
 
