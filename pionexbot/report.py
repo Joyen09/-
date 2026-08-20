@@ -161,11 +161,16 @@ def format_grid_report(d: dict, price_note: str = "") -> str:
     return "\n".join(lines)
 
 
-def account_lines(cfg, client, price: float) -> list[str]:
+def account_lines(cfg, client, price: float,
+                  bot_inventory: float = 0.0) -> list[str]:
     """交易所帳戶實況：總值 vs 你存進去的本金。
 
-    這是最終真相——不靠任何記帳推算，直接問交易所現在有多少錢。
-    只有實盤有意義；紙上模式與查詢失敗都回空清單（呼叫端不必判斷）。"""
+    只有實盤有意義；紙上模式與查詢失敗都回空清單（呼叫端不必判斷）。
+
+    重要：帳戶裡可能有「不是機器人買的」幣（手動買、空投、其他機器人）。
+    此時「帳戶總值 − 本金」**不等於機器人的績效**——會把手動持倉的漲跌
+    算到機器人頭上。所以這裡比對機器人記的存貨（bot_inventory）與帳戶
+    實際持有量，差距顯著就明講，不讓那個數字被誤讀成機器人賺的。"""
     if cfg.is_live is False or client is None:
         return []
     quote_coin = cfg.symbol.split("_")[-1]
@@ -184,13 +189,28 @@ def account_lines(cfg, client, price: float) -> list[str]:
         init = float(cfg.trading.get("initial_capital") or 0)
     except (TypeError, ValueError):
         init = 0.0
+    # 帳戶裡有多少幣「不是機器人買的」——決定上面那個數字能不能解讀成績效
+    extra_base = free_b - bot_inventory
+    extra_value = extra_base * price
+    mixed = abs(extra_value) > max(1.0, total * 0.02)   # 超過 1 USDT 或 2% 才提
+
     if init > 0:
         diff = total - init
-        out.append(f"投入本金 {init:.2f} → 實際{'賺' if diff >= 0 else '賠'}"
+        out.append(f"投入本金 {init:.2f} → 帳戶淨變化"
                    f" {diff:+.2f} {quote_coin}（{diff / init * 100:+.2f}%）")
     else:
         out.append("（在 config.yaml 的 trading.initial_capital 填入你存進"
-                   "派網的本金，這裡就會直接算出實際賺賠）")
+                   "派網的本金，這裡就會算出帳戶淨變化）")
+
+    if mixed:
+        out += [
+            f"⚠ 帳戶有 {extra_base:.8f} {base_coin}（≈{extra_value:+.2f}）"
+            f"不是機器人買的（機器人存貨只有 {bot_inventory:.8f}）",
+            "　→ 上面的「帳戶淨變化」含這部分的漲跌與你額外的入金，"
+            "**不等於機器人績效**；機器人的成績請看前面的「真實總損益」。",
+        ]
+    elif init > 0:
+        out.append("　（機器人存貨與帳戶持有量相符，此數字可視為機器人績效）")
     return out
 
 
@@ -210,4 +230,5 @@ def grid_report_text(cfg, store, client, now_ts: float) -> str:
     d = build_grid_report(rows, grid_capital=capital,
                           current_price=price, now_ts=now_ts)
     return "\n".join([format_grid_report(d, price_note)]
-                     + account_lines(cfg, client, price))
+                     + account_lines(cfg, client, price,
+                                     bot_inventory=d.get("inventory_base", 0.0)))

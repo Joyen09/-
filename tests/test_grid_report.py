@@ -237,10 +237,11 @@ def _cfg(live=True, initial=0.0):
 
 def test_account_lines_compares_capital():
     from pionexbot.report import account_lines
-    # 帳戶：30 USDT + 1 BTC×7 = 37；本金 40 → 賠 3
-    out = "\n".join(account_lines(_cfg(initial=40.0), _FakeClient(), 7.0))
+    # 帳戶：30 USDT + 1 BTC×7 = 37；本金 40 → 淨變化 −3（機器人存貨相符）
+    out = "\n".join(account_lines(_cfg(initial=40.0), _FakeClient(), 7.0,
+                                  bot_inventory=1.0))
     assert "總值 37.00" in out, out
-    assert "賠 -3.00" in out and "-7.50%" in out, out
+    assert "帳戶淨變化 -3.00" in out and "-7.50%" in out, out
 
 
 def test_account_lines_prompts_when_no_capital_set():
@@ -255,6 +256,27 @@ def test_account_lines_skipped_for_paper_and_survives_api_failure():
         "紙上模式沒有交易所帳戶可查"
     out = "\n".join(account_lines(_cfg(initial=40.0), _FakeClient(fail=True), 7.0))
     assert "查詢失敗" in out, "查餘額失敗要降級成一行提示，不能讓整份報表消失"
+
+
+def test_account_flags_holdings_not_bought_by_bot():
+    """帳戶有機器人沒買的幣時，「帳戶淨變化」不得被當成機器人績效。"""
+    from pionexbot.report import account_lines
+    # 帳戶 1 BTC，但機器人只買了 0.2 → 0.8 BTC 不是它的
+    out = "\n".join(account_lines(_cfg(initial=40.0),
+                                  _FakeClient({"USDT": 30.0, "BTC": 1.0}),
+                                  7.0, bot_inventory=0.2))
+    assert "不是機器人買的" in out, out
+    assert "不等於機器人績效" in out, out
+    assert "0.80000000" in out, "要指出多出來的量"
+
+
+def test_account_confirms_when_holdings_match():
+    from pionexbot.report import account_lines
+    out = "\n".join(account_lines(_cfg(initial=40.0),
+                                  _FakeClient({"USDT": 30.0, "BTC": 1.0}),
+                                  7.0, bot_inventory=1.0))
+    assert "不是機器人買的" not in out
+    assert "可視為機器人績效" in out, out
 
 
 def test_grid_report_text_combines_report_and_account():
